@@ -113,28 +113,32 @@ def main():
             subprocess.Popen(cmd, shell=True)
         else:
             # Linux / macOS
-            # 1. Try gnome-terminal
-            # 2. Try xterm
-            # 3. Try tmux / screen
-            # 4. Fallback to background process with nohup/subprocess
             launched = False
             
-            # Check for GUI terminal emulators
-            for term, term_cmd in [
+            # Check for GUI terminal emulators or running tmux session
+            # For tmux, only use if inside tmux or tmux server is running
+            in_tmux = "TMUX" in os.environ or subprocess.call("tmux ls > /dev/null 2>&1", shell=True) == 0
+            
+            terms = [
                 ("gnome-terminal", f'gnome-terminal --title="{title}" -- bash -c "python3 \'{MASTER_SCRIPT}\' mass -l \'{batch_file}\' -t {threads}; exec bash"'),
                 ("konsole", f'konsole --new-tab -e bash -c "python3 \'{MASTER_SCRIPT}\' mass -l \'{batch_file}\' -t {threads}; exec bash"'),
                 ("xterm", f'xterm -T "{title}" -e "python3 \'{MASTER_SCRIPT}\' mass -l \'{batch_file}\' -t {threads}; exec bash" &'),
-                ("tmux", f'tmux new-window -n "{title}" "python3 \'{MASTER_SCRIPT}\' mass -l \'{batch_file}\' -t {threads}"'),
-            ]:
+            ]
+            if in_tmux:
+                terms.append(("tmux", f'tmux new-window -n "{title}" "python3 \'{MASTER_SCRIPT}\' mass -l \'{batch_file}\' -t {threads}"'))
+
+            for term, term_cmd in terms:
                 if subprocess.call(f"which {term} > /dev/null 2>&1", shell=True) == 0:
-                    subprocess.Popen(term_cmd, shell=True)
-                    launched = True
-                    break
+                    res = subprocess.call(term_cmd, shell=True)
+                    if res == 0:
+                        launched = True
+                        break
             
             if not launched:
-                # VPS/CLI Headless Fallback: Run in background using python3 directly
+                # VPS Headless Fallback: Launch Python in background cleanly!
                 cmd = [sys.executable, MASTER_SCRIPT, "mass", "-l", batch_file, "-t", str(threads)]
-                subprocess.Popen(cmd, cwd=SCRIPT_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.Popen(cmd, cwd=SCRIPT_DIR)
+                launched = True
         
         print(f"{G}[+]{RS} Launched Batch {M}{batch_num}/{total_batches}{RS} ({count} targets)")
 
